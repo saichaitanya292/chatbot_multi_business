@@ -8,15 +8,24 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def load_latest_data():
     try:
-        latest = ChatbotData.objects.last()
+        latest = ChatbotData.objects.filter(business__name="coffee").first()
 
         if not latest:
             return [], []
 
         file_path = latest.file.path
+        print("File path:", file_path)
 
         df = pd.read_excel(file_path)
+        print("Columns before processing:", df.columns)
+
         df.columns = df.columns.str.strip().str.lower()
+        print("Columns after processing:", df.columns)
+        print("Data preview:", df.head())
+
+        if 'question' not in df.columns or 'answer' not in df.columns:
+            print("Column mismatch issue")
+            return [], []
 
         questions = df['question'].astype(str).tolist()
         answers = df['answer'].astype(str).tolist()

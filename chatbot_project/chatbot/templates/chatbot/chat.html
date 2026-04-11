@@ -113,7 +113,8 @@ function sendMessage() {
     })
     .then(res => res.json())
     .then(data => {
-        addMessage(data.bot, "bot");
+        console.log(data);
+        addMessage(data.bot || data.response || "No response from bot", "bot");
     });
 
     input.value = "";
