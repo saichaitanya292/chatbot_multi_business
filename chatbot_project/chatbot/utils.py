@@ -1,9 +1,26 @@
 import pandas as pd
 from sentence_transformers import SentenceTransformer, util
 from .models import ChatbotData
-import os
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+# -------------------------------
+# 🔹 Lazy Load Model (IMPORTANT)
+# -------------------------------
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        print("Loading SentenceTransformer model...")
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+    return model
+
+
+# -------------------------------
+# 🔹 Cache Data + Embeddings
+# -------------------------------
+cached_questions = None
+cached_answers = None
+cached_embeddings = None
 
 
 def load_latest_data():
@@ -11,17 +28,16 @@ def load_latest_data():
         latest = ChatbotData.objects.filter(business__name="coffee").first()
 
         if not latest:
+            print("No data found in DB")
             return [], []
 
         file_path = latest.file.path
         print("File path:", file_path)
 
         df = pd.read_excel(file_path)
-        print("Columns before processing:", df.columns)
 
+        # Clean column names
         df.columns = df.columns.str.strip().str.lower()
-        print("Columns after processing:", df.columns)
-        print("Data preview:", df.head())
 
         if 'question' not in df.columns or 'answer' not in df.columns:
             print("Column mismatch issue")
@@ -37,22 +53,50 @@ def load_latest_data():
         return [], []
 
 
-def get_bot_response(user_input):
-    questions, answers = load_latest_data()
+def load_cached_data():
+    global cached_questions, cached_answers, cached_embeddings
+
+    if cached_questions is None:
+        print("Loading data + embeddings...")
+
+        questions, answers = load_latest_data()
+
+        if not questions:
+            return [], [], None
+
+        model = get_model()
+
+        # Compute embeddings ONCE
+        cached_embeddings = model.encode(questions, convert_to_tensor=True)
+        cached_questions = questions
+        cached_answers = answers
+
+    return cached_questions, cached_answers, cached_embeddings
+
+
+# -------------------------------
+# 🔹 Main Chatbot Function
+# -------------------------------
+def get_bot_response(user_input, business_name=None):
+    questions, answers, question_embeddings = load_cached_data()
 
     if not questions:
         return "No data available. Please upload Excel in admin."
 
-    question_embeddings = model.encode(questions, convert_to_tensor=True)
+    model = get_model()
+
+    # Encode user input
     user_embedding = model.encode(user_input, convert_to_tensor=True)
 
+    # Compute similarity
     similarities = util.cos_sim(user_embedding, question_embeddings)
 
     best_match_idx = similarities.argmax().item()
     best_score = similarities[0][best_match_idx].item()
 
-    print("Score:", best_score)
+    print("Best Score:", best_score)
 
+    # Threshold check
     if best_score < 0.4:
         return "Sorry, I didn't understand."
 
